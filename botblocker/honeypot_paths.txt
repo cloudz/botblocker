@@ -1,0 +1,71 @@
+# BotBlocker honeypot paths
+# Any request matching these paths triggers the honeypot_path_hit score.
+# One path per line. Matching is prefix-based and case-insensitive.
+
+# Environment / config file exposure
+/.env
+/.env.local
+/.env.production
+/.env.backup
+
+# Source control exposure
+/.git/config
+/.git/HEAD
+/.svn/entries
+/.hg/
+
+# Cloud credential fishing
+/.aws/credentials
+/.aws/config
+/.docker/config.json
+
+# WordPress probes (if you don't run WordPress)
+/wp-login.php
+/wp-admin/
+/xmlrpc.php
+/wp-content/uploads/
+/wp-includes/
+
+# PHP info / admin panels
+/phpinfo.php
+/phpmyadmin/
+/adminer.php
+/pma/
+
+# Web shell probes
+/shell.php
+/c99.php
+/r57.php
+/webshell.php
+/cmd.php
+/eval-stdin.php
+
+# Application framework probes
+/actuator/env
+/actuator/health
+/console/
+/solr/admin/
+/manager/html
+
+# Dependency / test file exposure
+/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php
+/vendor/autoload.php
+
+# Backup file probes
+/backup.sql
+/dump.sql
+/database.sql
+/db.sql.gz
+/.backup
+/backup.zip
+/backup.tar.gz
+
+# Common LFI / path traversal targets
+/etc/passwd
+/etc/shadow
+/proc/self/environ
+/proc/self/cmdline
+
+# CGI probes
+/cgi-bin/
+/cgi-bin/test-cgi

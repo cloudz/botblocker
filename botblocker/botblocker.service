@@ -1,0 +1,29 @@
+[Unit]
+Description=BotBlocker - Bad bot detection and blocking daemon
+After=network.target csf.service lfd.service
+Wants=csf.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/botblocker -config /usr/local/botblocker/config.ini
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/botblocker /var/lib/botblocker
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target
