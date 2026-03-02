@@ -98,8 +98,8 @@ fi
 
 # --- Download binary ---
 
-DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r ".assets[] | select(.name == \"${ASSET_NAME}\") | .browser_download_url")
-if [[ -z "$DOWNLOAD_URL" || "$DOWNLOAD_URL" == "null" ]]; then
+ASSET_ID=$(echo "$RELEASE_JSON" | jq -r ".assets[] | select(.name == \"${ASSET_NAME}\") | .id")
+if [[ -z "$ASSET_ID" || "$ASSET_ID" == "null" ]]; then
     error "Asset '${ASSET_NAME}' not found in release ${LATEST_TAG}"
     exit 1
 fi
@@ -108,8 +108,12 @@ TMPDIR=$(mktemp -d)
 TMPBIN="${TMPDIR}/botblocker"
 trap 'rm -rf "$TMPDIR"' EXIT
 
+ASSET_URL="https://api.github.com/repos/${REPO}/releases/assets/${ASSET_ID}"
+
 info "Downloading ${ASSET_NAME} from ${LATEST_TAG}..."
-curl -fsSL -o "$TMPBIN" "$DOWNLOAD_URL" || {
+curl -fSL --progress-bar --connect-timeout 15 --max-time 300 \
+    -H "Accept: application/octet-stream" \
+    -o "$TMPBIN" "$ASSET_URL" || {
     error "Download failed"
     exit 1
 }
