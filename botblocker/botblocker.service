@@ -5,7 +5,7 @@ Wants=csf.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/botblocker -config /usr/local/botblocker/config.ini
+ExecStart=/usr/local/bin/botblocker --daemon --config /usr/local/botblocker/config.ini
 Restart=on-failure
 RestartSec=10
 
