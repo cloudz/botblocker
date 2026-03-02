@@ -2,7 +2,7 @@
 
 Automated bot and vulnerability scanner detection and blocking for Linux servers running Nginx/Apache with CSF firewall. Designed for DirectAdmin environments but works with any standard access log format.
 
-BotBlocker runs as a daemon that monitors server load and, when thresholds are exceeded, parses recent access logs to identify and block malicious IPs via CSF (ConfigServer Firewall).
+BotBlocker monitors server load and, when thresholds are exceeded, parses recent access logs to identify and block malicious IPs via CSF (ConfigServer Firewall). By default it runs a single dry-run scan and exits — use `--daemon` for continuous monitoring.
 
 ## Features
 
@@ -12,7 +12,7 @@ BotBlocker runs as a daemon that monitors server load and, when thresholds are e
 - **`--once` mode** — dry-run analysis with a sorted threat report, blocks nothing
 - **`--scan` mode** — one-shot analysis that actually blocks via CSF (the "under attack, do it now" command)
 - **`--window` override** — analyze a custom time window (e.g., last hour) instead of the default 5 minutes
-- **Whitelist support** — IPs/CIDRs in the whitelist file are never blocked
+- **Whitelist support** — IPs/CIDRs in the whitelist file are never blocked; server's own IPs are auto-whitelisted at startup
 - **Honeypot paths** — configurable trap paths that boost scoring when accessed
 - **Rate limiting** — max 20 blocks per minute to prevent log-poisoning attacks
 - **State persistence** — tracks repeat offenders across restarts
@@ -32,8 +32,8 @@ scp config.ini root@server:/usr/local/botblocker/config.ini
 ## Usage
 
 ```bash
-# Analyze — see report, block nothing (safe)
-botblocker --once --config /usr/local/botblocker/config.ini
+# Analyze — see report, block nothing (default behavior)
+botblocker --config /usr/local/botblocker/config.ini
 
 # Analyze last hour of logs
 botblocker --once --window 3600
@@ -45,7 +45,7 @@ botblocker --scan --config /usr/local/botblocker/config.ini
 botblocker --scan --window 1800
 
 # Run as daemon (blocks automatically when load spikes)
-botblocker --config /usr/local/botblocker/config.ini
+botblocker --daemon --config /usr/local/botblocker/config.ini
 
 # Force immediate scan on running daemon
 kill -USR1 $(pidof botblocker)
@@ -80,7 +80,7 @@ kill -USR1 $(pidof botblocker)
 Total: 72 scored, 14 above block threshold (60)
 ```
 
-IPs marked with `>>` exceed the block threshold and would be blocked in `--scan` mode.
+IPs marked with `>>` exceed the block threshold and would be blocked in `--scan` mode. IPs marked with `WL` are whitelisted and will never be blocked.
 
 ## Configuration
 

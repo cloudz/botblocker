@@ -20,6 +20,7 @@ const version = "1.1.0"
 
 func main() {
 	configPath := flag.String("config", "/usr/local/botblocker/config.ini", "path to config file")
+	daemon := flag.Bool("daemon", false, "run in continuous daemon mode")
 	once := flag.Bool("once", false, "run a single scan cycle and exit (dry-run)")
 	scan := flag.Bool("scan", false, "run a single scan cycle, block threats, and exit")
 	window := flag.Int("window", 0, "override log_parse_window in seconds (10-86400, requires --once or --scan)")
@@ -32,8 +33,12 @@ func main() {
 	}
 
 	// Flag validation
-	if *once && *scan {
-		fmt.Fprintln(os.Stderr, "error: --once and --scan are mutually exclusive")
+	modeCount := 0
+	if *daemon { modeCount++ }
+	if *once   { modeCount++ }
+	if *scan   { modeCount++ }
+	if modeCount > 1 {
+		fmt.Fprintln(os.Stderr, "error: --daemon, --once, and --scan are mutually exclusive")
 		os.Exit(1)
 	}
 	if *window != 0 && !*once && !*scan {
@@ -65,9 +70,13 @@ func main() {
 		runScan(cfg)
 		return
 	}
+	if *daemon {
+		runDaemon(cfg, *configPath)
+		return
+	}
 
-	// Daemon mode
-	runDaemon(cfg)
+	// Default: dry-run scan
+	runOnce(cfg)
 }
 
 func runOnce(cfg *config.Config) {
@@ -120,7 +129,14 @@ func runScan(cfg *config.Config) {
 	log.Info("=== scan complete ===")
 }
 
-func runDaemon(cfg *config.Config) {
+func runDaemon(cfg *config.Config, configPath string) {
+	fmt.Fprintf(os.Stderr, "BotBlocker v%s — daemon starting\n", version)
+	fmt.Fprintf(os.Stderr, "  config:    %s\n", configPath)
+	fmt.Fprintf(os.Stderr, "  log:       %s\n", cfg.DaemonLog)
+	fmt.Fprintf(os.Stderr, "  threshold: %.1f (%d CPUs × %.1f)\n", cfg.LoadThreshold(), cfg.NumCPU, cfg.LoadMultiplier)
+	fmt.Fprintf(os.Stderr, "  window:    %ds\n", cfg.LogParseWindow)
+	fmt.Fprintln(os.Stderr, "Use --scan to block immediately, or run without flags for a dry-run.")
+
 	log, err := logger.New(cfg.DaemonLog, cfg.BlockedLog, cfg.LogLevel)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger error: %v\n", err)
