@@ -12,20 +12,37 @@ import (
 	"github.com/botblocker/botblocker/internal/logger"
 	"github.com/botblocker/botblocker/internal/monitor"
 	"github.com/botblocker/botblocker/internal/parser"
+	"github.com/botblocker/botblocker/internal/report"
 	"github.com/botblocker/botblocker/internal/scorer"
 )
 
-const version = "1.0.0"
+const version = "1.1.0"
 
 func main() {
 	configPath := flag.String("config", "/usr/local/botblocker/config.ini", "path to config file")
 	once := flag.Bool("once", false, "run a single scan cycle and exit (dry-run)")
+	scan := flag.Bool("scan", false, "run a single scan cycle, block threats, and exit")
+	window := flag.Int("window", 0, "override log_parse_window in seconds (10-86400, requires --once or --scan)")
 	showVersion := flag.Bool("version", false, "show version and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("botblocker v%s\n", version)
 		os.Exit(0)
+	}
+
+	// Flag validation
+	if *once && *scan {
+		fmt.Fprintln(os.Stderr, "error: --once and --scan are mutually exclusive")
+		os.Exit(1)
+	}
+	if *window != 0 && !*once && !*scan {
+		fmt.Fprintln(os.Stderr, "error: --window requires --once or --scan")
+		os.Exit(1)
+	}
+	if *window != 0 && (*window < 10 || *window > 86400) {
+		fmt.Fprintf(os.Stderr, "error: --window must be between 10 and 86400 (got %d)\n", *window)
+		os.Exit(1)
 	}
 
 	// Load configuration
@@ -35,9 +52,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --once mode: single scan, dry run, stdout logging
+	// Apply window override
+	if *window != 0 {
+		cfg.LogParseWindow = *window
+	}
+
 	if *once {
 		runOnce(cfg)
+		return
+	}
+	if *scan {
+		runScan(cfg)
 		return
 	}
 
@@ -50,15 +75,9 @@ func runOnce(cfg *config.Config) {
 
 	p := parser.New(cfg, log)
 	s := scorer.New(cfg, log)
-	b, err := blocker.New(cfg, log, true) // always dry-run in --once
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
 
 	log.Info("=== BotBlocker v%s — single scan (dry run) ===", version)
-	log.Info("load threshold: %.1f (CPUs: %d × multiplier: %.1f)",
-		cfg.LoadThreshold(), cfg.NumCPU, cfg.LoadMultiplier)
+	log.Info("parse window: %ds | block threshold: %d", cfg.LogParseWindow, cfg.BlockScore)
 
 	entries, err := p.ParseRecentEntries()
 	if err != nil {
@@ -66,20 +85,38 @@ func runOnce(cfg *config.Config) {
 	}
 
 	scores := s.ScoreEntries(entries)
+	blockCount := report.PrintReport(os.Stdout, scores, cfg)
 
-	// Print all scored IPs
-	for ip, sc := range scores {
-		if sc.Score > 0 {
-			log.Info("IP %-18s score=%-4d reqs=%-5d rpm=%-6.0f err=%-5.0f%% reasons=[%s]",
-				ip, sc.Score, sc.TotalRequests, sc.RequestsPerMin, sc.ErrorRate,
-				joinReasons(sc.Reasons))
-			if sc.Score >= cfg.BlockScore {
-				log.Info("  ^^^ WOULD BLOCK (threshold: %d)", cfg.BlockScore)
-			}
-		}
+	if blockCount > 0 {
+		fmt.Println("To block these IPs, run: botblocker --scan")
 	}
 
-	b.ProcessScores(scores) // dry-run, just logs
+	log.Info("=== scan complete ===")
+}
+
+func runScan(cfg *config.Config) {
+	log := logger.NewStdout(cfg.LogLevel)
+
+	p := parser.New(cfg, log)
+	s := scorer.New(cfg, log)
+	b, err := blocker.New(cfg, log, false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	log.Info("=== BotBlocker v%s — SCAN MODE (will block!) ===", version)
+	log.Info("parse window: %ds | block threshold: %d", cfg.LogParseWindow, cfg.BlockScore)
+
+	entries, err := p.ParseRecentEntries()
+	if err != nil {
+		log.Error("parse error: %v", err)
+	}
+
+	scores := s.ScoreEntries(entries)
+	report.PrintReport(os.Stdout, scores, cfg)
+
+	b.ProcessScores(scores)
 	log.Info("=== scan complete ===")
 }
 
@@ -159,15 +196,4 @@ func runCycle(cfg *config.Config, p *parser.Parser, s *scorer.Scorer, b *blocker
 	log.Info("scored %d IPs, %d above block threshold", len(scores), above)
 
 	b.ProcessScores(scores)
-}
-
-func joinReasons(reasons []string) string {
-	result := ""
-	for i, r := range reasons {
-		if i > 0 {
-			result += "; "
-		}
-		result += r
-	}
-	return result
 }

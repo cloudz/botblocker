@@ -66,8 +66,8 @@ func DefaultConfig() *Config {
 		RepeatOffenderN:   3,
 		TempBlockSeconds:  3600,
 
-		NginxLogGlob:  "/var/log/nginx/access.log",
-		ApacheLogGlob: "/home/*/domains/*/logs/access.log",
+		NginxLogGlob:  "/var/log/nginx/domains/*.log",
+		ApacheLogGlob: "/var/log/httpd/domains/*.log, /home/*/domains/*/logs/access.log",
 		WhitelistFile: "/usr/local/botblocker/whitelist.txt",
 		BlockedLog:    "/var/log/botblocker/blocked.log",
 		DaemonLog:     "/var/log/botblocker/botblocker.log",

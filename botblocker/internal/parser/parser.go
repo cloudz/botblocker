@@ -73,30 +73,34 @@ var cfRe = regexp.MustCompile(
 		`"([^"]*)"`,        // 7: user-agent
 )
 
-// domainFromPath extracts domain name from DirectAdmin log paths like:
-// /home/user/domains/example.com/logs/access.log
+// domainFromPath extracts domain name from DirectAdmin log paths.
+// Style 1 (per-user): /home/user/domains/example.com/logs/access.log
 var domainPathRe = regexp.MustCompile(`/domains/([^/]+)/logs/`)
+
+// Style 2 (centralized): /var/log/httpd/domains/example.com.log
+//                         /var/log/nginx/domains/example.com.log
+var domainFileRe = regexp.MustCompile(`/domains/([^/]+)\.log$`)
 
 const maxLogLineLen = 8192
 
 // ParseRecentEntries globs all configured log files and parses entries within
-// the configured time window.
+// the configured time window. Glob values support comma-separated patterns.
 func (p *Parser) ParseRecentEntries() ([]LogEntry, error) {
 	cutoff := time.Now().Add(-time.Duration(p.cfg.LogParseWindow) * time.Second)
 	var all []LogEntry
 
 	// Nginx logs
-	if p.cfg.NginxLogGlob != "" {
-		entries, err := p.parseGlob(p.cfg.NginxLogGlob, "", cutoff)
+	for _, pattern := range splitGlobs(p.cfg.NginxLogGlob) {
+		entries, err := p.parseGlob(pattern, cutoff)
 		if err != nil {
 			p.log.Warn("nginx log parse error: %v", err)
 		}
 		all = append(all, entries...)
 	}
 
-	// Apache / DirectAdmin per-domain logs
-	if p.cfg.ApacheLogGlob != "" {
-		entries, err := p.parseGlob(p.cfg.ApacheLogGlob, "", cutoff)
+	// Apache / httpd logs
+	for _, pattern := range splitGlobs(p.cfg.ApacheLogGlob) {
+		entries, err := p.parseGlob(pattern, cutoff)
 		if err != nil {
 			p.log.Warn("apache log parse error: %v", err)
 		}
@@ -107,28 +111,57 @@ func (p *Parser) ParseRecentEntries() ([]LogEntry, error) {
 	return all, nil
 }
 
-func (p *Parser) parseGlob(pattern, defaultDomain string, cutoff time.Time) ([]LogEntry, error) {
+// splitGlobs splits a comma-separated list of glob patterns.
+func splitGlobs(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (p *Parser) parseGlob(pattern string, cutoff time.Time) ([]LogEntry, error) {
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, err
 	}
 
+	if len(matches) == 0 {
+		p.log.Debug("glob %q matched 0 files", pattern)
+	} else {
+		p.log.Debug("glob %q matched %d file(s)", pattern, len(matches))
+	}
+
 	var all []LogEntry
 	for _, path := range matches {
-		// Extract domain from DirectAdmin-style paths
-		domain := defaultDomain
-		if m := domainPathRe.FindStringSubmatch(path); m != nil {
-			domain = m[1]
-		}
+		domain := domainFromPath(path)
 
 		entries, err := p.parseFile(path, domain, cutoff)
 		if err != nil {
 			p.log.Warn("error parsing %s: %v", path, err)
 			continue
 		}
+		p.log.Debug("  %s (domain=%s): %d entries in window", path, domain, len(entries))
 		all = append(all, entries...)
 	}
 	return all, nil
+}
+
+// domainFromPath extracts domain from DirectAdmin-style log paths.
+// Returns empty string if no domain can be determined.
+func domainFromPath(path string) string {
+	// Style 1: /home/user/domains/example.com/logs/access.log
+	if m := domainPathRe.FindStringSubmatch(path); m != nil {
+		return m[1]
+	}
+	// Style 2: /var/log/httpd/domains/example.com.log
+	if m := domainFileRe.FindStringSubmatch(path); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 func (p *Parser) parseFile(path, domain string, cutoff time.Time) ([]LogEntry, error) {

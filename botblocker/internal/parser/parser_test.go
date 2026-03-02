@@ -62,6 +62,47 @@ func TestParseLineMalformed(t *testing.T) {
 	}
 }
 
+func TestDomainFromPath(t *testing.T) {
+	cases := []struct {
+		path   string
+		domain string
+	}{
+		// Style 1: per-user DirectAdmin
+		{"/home/user/domains/example.com/logs/access.log", "example.com"},
+		// Style 2: centralized httpd
+		{"/var/log/httpd/domains/example.com.log", "example.com"},
+		{"/var/log/httpd/domains/houtbewaarder.be.log", "houtbewaarder.be"},
+		// Style 2: centralized nginx
+		{"/var/log/nginx/domains/mysite.nl.log", "mysite.nl"},
+		// No domain extractable
+		{"/var/log/nginx/access.log", ""},
+	}
+	for _, tc := range cases {
+		got := domainFromPath(tc.path)
+		if got != tc.domain {
+			t.Errorf("domainFromPath(%q) = %q, want %q", tc.path, got, tc.domain)
+		}
+	}
+}
+
+func TestSplitGlobs(t *testing.T) {
+	cases := []struct {
+		input string
+		want  int
+	}{
+		{"/var/log/nginx/domains/*.log", 1},
+		{"/var/log/httpd/domains/*.log, /home/*/domains/*/logs/access.log", 2},
+		{"", 0},
+		{"  ,  ", 0},
+	}
+	for _, tc := range cases {
+		got := splitGlobs(tc.input)
+		if len(got) != tc.want {
+			t.Errorf("splitGlobs(%q) = %d patterns, want %d", tc.input, len(got), tc.want)
+		}
+	}
+}
+
 func TestSanitize(t *testing.T) {
 	// Control character stripping (log injection prevention)
 	got := sanitize("normal\x00\x01\x1f\x7ftext", 100)
