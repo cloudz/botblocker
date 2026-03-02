@@ -261,7 +261,39 @@ func (c *Config) LoadWhitelist() error {
 		}
 		c.WhitelistNets = append(c.WhitelistNets, network)
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	c.addSelfIPs()
+	return nil
+}
+
+// addSelfIPs detects the server's own IP addresses and adds them to the
+// whitelist so that BotBlocker never blocks its own traffic.
+func (c *Config) addSelfIPs() {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return
+	}
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip := ipNet.IP
+		// Skip loopback — already covered by whitelist file
+		if ip.IsLoopback() {
+			continue
+		}
+		var mask net.IPMask
+		if ip.To4() != nil {
+			mask = net.CIDRMask(32, 32)
+		} else {
+			mask = net.CIDRMask(128, 128)
+		}
+		c.WhitelistNets = append(c.WhitelistNets, &net.IPNet{IP: ip.Mask(mask), Mask: mask})
+	}
 }
 
 func (c *Config) loadHoneypotPaths() error {

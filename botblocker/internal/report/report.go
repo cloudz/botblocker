@@ -42,7 +42,9 @@ func PrintReport(w io.Writer, scores map[string]*scorer.IPScore, cfg *config.Con
 	blockCount := 0
 	for _, sc := range items {
 		marker := "  "
-		if sc.Score >= cfg.BlockScore {
+		if cfg.IsWhitelisted(sc.IP) {
+			marker = "WL"
+		} else if sc.Score >= cfg.BlockScore {
 			marker = ">>"
 			blockCount++
 		}
