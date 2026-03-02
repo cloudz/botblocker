@@ -83,6 +83,10 @@ else
     warn "Honeypot paths already exists, not overwriting"
 fi
 
+# Install update script (always overwrite — not user config)
+install -m 755 "$SCRIPT_DIR/scripts/update.sh" "$INSTALL_DIR/update.sh"
+info "Update script → $INSTALL_DIR/update.sh"
+
 # Install systemd service
 install -m 644 "$SCRIPT_DIR/botblocker.service" "$SYSTEMD_DIR/botblocker.service"
 systemctl daemon-reload
@@ -99,6 +103,7 @@ info ""
 info "Quick checks:"
 info "  systemctl status botblocker"
 info "  tail -f /var/log/botblocker/botblocker.log"
-info "  botblocker --once --config $INSTALL_DIR/config.ini"
+info "  botblocker --config $INSTALL_DIR/config.ini"
+info "  $INSTALL_DIR/update.sh"
 echo ""
 warn "IMPORTANT: Verify your own IPs are in $INSTALL_DIR/whitelist.txt"
