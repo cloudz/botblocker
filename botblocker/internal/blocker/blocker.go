@@ -167,11 +167,16 @@ func (b *Blocker) blockTemp(ip string, ttlSeconds int) error {
 }
 
 // blockPermanent issues a CSF permanent deny.
+// It removes any existing temp block first, since csf -d fails if the IP
+// is already in the temp deny list.
 func (b *Blocker) blockPermanent(ip string) error {
 	if b.dryRun {
-		b.log.Info("[DRY RUN] would execute: csf -d %s BotBlocker-permanent", ip)
+		b.log.Info("[DRY RUN] would execute: csf -tr %s; csf -d %s BotBlocker-permanent", ip, ip)
 		return nil
 	}
+
+	// Remove from temp deny list first (ignore errors — may not be temp-blocked)
+	_ = exec.Command(b.cfg.CSFBin, "-tr", ip).Run()
 
 	cmd := exec.Command(b.cfg.CSFBin, "-d", ip, "BotBlocker-permanent")
 	cmd.Stdout = nil
