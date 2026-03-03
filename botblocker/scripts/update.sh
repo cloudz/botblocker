@@ -175,18 +175,15 @@ fi
 
 # --- Update service file ---
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_SERVICE="${SCRIPT_DIR}/../botblocker.service"
+SERVICE_URL="https://raw.githubusercontent.com/${REPO}/main/botblocker/botblocker.service"
+TMPSERVICE="${TMPDIR}/botblocker.service"
 
-if [[ -f "$LOCAL_SERVICE" ]]; then
-    install -m 644 "$LOCAL_SERVICE" "$SERVICE_FILE"
+if curl -fsSL --connect-timeout 10 --max-time 30 -o "$TMPSERVICE" "$SERVICE_URL" 2>/dev/null && [[ -s "$TMPSERVICE" ]]; then
+    install -m 644 "$TMPSERVICE" "$SERVICE_FILE"
     systemctl daemon-reload
     info "Service file updated"
 else
-    # If update.sh is installed to /usr/local/botblocker, the bundled service
-    # file won't be alongside it. Skip the service file update in that case —
-    # the release binary is the important part.
-    warn "Service file source not found, skipping service file update"
+    warn "Could not download service file (non-fatal)"
 fi
 
 # --- Start service ---
