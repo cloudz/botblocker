@@ -38,13 +38,13 @@ func (m *Monitor) Run(triggerCh chan<- string, stopCh <-chan struct{}) {
 	pollTick := time.NewTicker(time.Duration(m.cfg.PollInterval) * time.Second)
 	defer pollTick.Stop()
 
-	// Baseline scan every 10 minutes regardless of load
-	baselineTick := time.NewTicker(10 * time.Minute)
+	// Baseline scan regardless of load
+	baselineTick := time.NewTicker(time.Duration(m.cfg.BaselineSeconds) * time.Second)
 	defer baselineTick.Stop()
 
-	// Cooldown: after a load-triggered scan, suppress further triggers for 5 minutes
+	// Cooldown: after a load-triggered scan, suppress further triggers
 	var lastLoadTrigger time.Time
-	cooldown := 5 * time.Minute
+	cooldown := time.Duration(m.cfg.CooldownSeconds) * time.Second
 
 	for {
 		select {

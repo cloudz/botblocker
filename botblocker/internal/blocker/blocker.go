@@ -57,7 +57,7 @@ func New(cfg *config.Config, log *logger.Logger, dryRun bool) (*Blocker, error) 
 			PermanentBlocked:  make(map[string]bool),
 			CurrentTempBlocks: make(map[string]time.Time),
 		},
-		maxBlocksPerMinute: 20,
+		maxBlocksPerMinute: cfg.MaxBlocksPerMin,
 	}
 
 	if err := b.loadState(); err != nil {

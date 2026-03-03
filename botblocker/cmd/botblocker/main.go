@@ -147,7 +147,8 @@ func runDaemon(cfg *config.Config, configPath string) {
 	}
 	defer log.Close()
 
-	log.Info("BotBlocker v%s starting — load threshold: %.1f", version, cfg.LoadThreshold())
+	log.Info("BotBlocker v%s starting — load threshold: %.1f (%d CPUs × %.1f multiplier)",
+		version, cfg.LoadThreshold(), cfg.NumCPU, cfg.LoadMultiplier)
 
 	p := parser.New(cfg, log)
 	s := scorer.New(cfg, log)
