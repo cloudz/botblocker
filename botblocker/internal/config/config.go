@@ -25,6 +25,9 @@ type Config struct {
 	ErrorRatePct      int     // % of 4xx for error score
 	RepeatOffenderN   int     // temp blocks before permanent
 	TempBlockSeconds  int     // TTL for temporary blocks
+	MaxBlocksPerMin   int     // max blocks per minute (rate limit)
+	CooldownSeconds   int     // seconds to suppress triggers after a load scan
+	BaselineSeconds   int     // seconds between baseline scans
 
 	// [paths]
 	NginxLogGlob  string
@@ -65,6 +68,9 @@ func DefaultConfig() *Config {
 		ErrorRatePct:      80,
 		RepeatOffenderN:   3,
 		TempBlockSeconds:  3600,
+		MaxBlocksPerMin:   20,
+		CooldownSeconds:   300,
+		BaselineSeconds:   600,
 
 		NginxLogGlob:  "/var/log/nginx/domains/*.log",
 		ApacheLogGlob: "/var/log/httpd/domains/*.log, /home/*/domains/*/logs/access.log",
@@ -175,6 +181,12 @@ func (c *Config) set(key, val string) error {
 		return setInt(&c.RepeatOffenderN, val, 1, 100)
 	case "temp_block_seconds":
 		return setInt(&c.TempBlockSeconds, val, 60, 604800)
+	case "max_blocks_per_min":
+		return setInt(&c.MaxBlocksPerMin, val, 1, 1000)
+	case "cooldown_seconds":
+		return setInt(&c.CooldownSeconds, val, 10, 3600)
+	case "baseline_seconds":
+		return setInt(&c.BaselineSeconds, val, 30, 86400)
 	// [paths]
 	case "nginx_log_glob":
 		c.NginxLogGlob = val
@@ -206,6 +218,8 @@ func (c *Config) set(key, val string) error {
 		return setInt(&c.ScoreMultiVhostScan, val, 0, 1000)
 	case "cross_domain_thresh":
 		return setInt(&c.CrossDomainThresh, val, 1, 1000)
+	default:
+		return fmt.Errorf("unknown config key: %s", key)
 	}
 	return nil
 }
