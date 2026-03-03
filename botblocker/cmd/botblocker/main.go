@@ -16,7 +16,9 @@ import (
 	"github.com/botblocker/botblocker/internal/scorer"
 )
 
-const version = "1.1.0"
+// version is set at build time via:
+//   -ldflags "-X main.version=1.2.1"
+var version = "dev"
 
 func main() {
 	configPath := flag.String("config", "/usr/local/botblocker/config.ini", "path to config file")
@@ -25,6 +27,7 @@ func main() {
 	scan := flag.Bool("scan", false, "run a single scan cycle, block threats, and exit")
 	window := flag.Int("window", 0, "override log_parse_window in seconds (10-86400, requires --once or --scan)")
 	showVersion := flag.Bool("version", false, "show version and exit")
+	flag.BoolVar(showVersion, "v", false, "show version and exit (shorthand)")
 	flag.Parse()
 
 	if *showVersion {

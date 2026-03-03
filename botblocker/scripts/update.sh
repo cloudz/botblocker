@@ -201,6 +201,19 @@ systemctl start botblocker || {
     exit 1
 }
 
+# --- Update self ---
+
+SCRIPT_URL="https://raw.githubusercontent.com/${REPO}/main/botblocker/scripts/update.sh"
+SELF_PATH="${INSTALL_DIR}/update.sh"
+TMPSCRIPT="${TMPDIR}/update.sh"
+
+if curl -fsSL --connect-timeout 10 --max-time 30 -o "$TMPSCRIPT" "$SCRIPT_URL" 2>/dev/null; then
+    install -m 755 "$TMPSCRIPT" "$SELF_PATH"
+    info "Update script refreshed"
+else
+    warn "Could not refresh update script (non-fatal)"
+fi
+
 # --- Summary ---
 
 echo ""
