@@ -73,6 +73,13 @@ func NewStdout(levelStr string) *Logger {
 	}
 }
 
+// SetStdout enables or disables additional stdout output alongside file logging.
+func (l *Logger) SetStdout(enabled bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.stdout = enabled
+}
+
 // Close closes all log files.
 func (l *Logger) Close() {
 	l.mu.Lock()
@@ -104,9 +111,7 @@ func (l *Logger) log(level Level, format string, args ...interface{}) {
 
 	if l.stdout {
 		fmt.Print(line)
-		return
 	}
-
 	if l.daemonFile != nil {
 		l.daemonFile.WriteString(line)
 	}
@@ -123,13 +128,10 @@ func (l *Logger) Block(action, blockType, ip string, score int, ttl string, reas
 
 	if l.stdout {
 		fmt.Print(line)
-		return
 	}
-
 	if l.blockFile != nil {
 		l.blockFile.WriteString(line)
 	}
-	// Also echo to daemon log
 	if l.daemonFile != nil {
 		l.daemonFile.WriteString(line)
 	}
@@ -145,9 +147,7 @@ func (l *Logger) Unblock(ip string) {
 
 	if l.stdout {
 		fmt.Print(line)
-		return
 	}
-
 	if l.blockFile != nil {
 		l.blockFile.WriteString(line)
 	}
