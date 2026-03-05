@@ -107,7 +107,14 @@ func runOnce(cfg *config.Config) {
 }
 
 func runScan(cfg *config.Config) {
-	log := logger.NewStdout(cfg.LogLevel)
+	// Use file logger so blocks are recorded in the block log
+	log, err := logger.New(cfg.DaemonLog, cfg.BlockedLog, cfg.LogLevel)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "logger error: %v\n", err)
+		os.Exit(1)
+	}
+	log.SetStdout(true)
+	defer log.Close()
 
 	p := parser.New(cfg, log)
 	s := scorer.New(cfg, log)
