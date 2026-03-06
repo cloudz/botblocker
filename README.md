@@ -3,7 +3,7 @@
 > A lightweight, persistent Go daemon that detects bad bots attacking shared hosting servers and blocks them automatically via CSF firewall.
 
 **Stack:** Go · CSF · nginx · Apache · DirectAdmin · CloudLinux
-**Version:** 1.0.0
+**Version:** 1.4.0
 **Binary size:** ~2.4MB · **RAM usage:** ~8–12MB at runtime
 
 ---
@@ -167,10 +167,11 @@ The service unit runs with restrictive systemd security directives:
 
 - `ProtectSystem=strict` — filesystem is read-only except explicitly allowed paths
 - `ProtectHome=read-only` — home directories are read-only (needed for DirectAdmin log access)
-- `ReadWritePaths` limited to `/var/log/botblocker` and `/var/lib/botblocker`
+- `ReadWritePaths` limited to `/var/log/botblocker`, `/var/lib/botblocker`, `/etc/csf`, `/var/lib/csf`, and `/tmp`
 - `PrivateTmp=true` — isolated `/tmp` namespace
 - `MemoryDenyWriteExecute=true` — prevents runtime code generation
-- `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups` — blocks kernel-level changes
+- `ProtectKernelTunables=true`, `ProtectControlGroups=true` — blocks kernel-level changes
+- `ProtectKernelModules=false` — CSF needs to interact with kernel netfilter/ipset modules
 - `MemoryMax=128M` — hard memory ceiling
 
 ### Whitelist hot-reload
@@ -192,14 +193,17 @@ The whitelist file is re-read on every parse cycle, so edits take effect without
 ```bash
 cd botblocker
 
+# Version is injected at build time from git tags
+VERSION=$(git describe --tags --always | sed 's/^v//')
+
 # Native build (when building on the target Linux server)
-go build -ldflags="-s -w" -o botblocker ./cmd/botblocker
+go build -ldflags="-s -w -X main.version=$VERSION" -o botblocker ./cmd/botblocker
 
 # Cross-compile from macOS to Linux (amd64)
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o botblocker ./cmd/botblocker
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$VERSION" -o botblocker ./cmd/botblocker
 
 # Cross-compile from macOS to Linux (arm64, e.g. AWS Graviton)
-GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o botblocker ./cmd/botblocker
+GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=$VERSION" -o botblocker ./cmd/botblocker
 ```
 
 > **Tip:** If you see `cannot execute binary file: Exec format error` on the server, you built for the wrong architecture. Check with `uname -m` on the server: `x86_64` → `GOARCH=amd64`, `aarch64` → `GOARCH=arm64`.
@@ -330,16 +334,34 @@ Add or remove paths from `honeypot_paths.txt` to match your hosting environment.
 
 ## Block Escalation
 
+### TTL scaling
+
+Temporary block duration scales based on two factors:
+
+- **Score severity:** TTL doubles for every 50 points above the block threshold
+- **Repeat offenses:** TTL doubles for each prior offense
+
+| Scenario | Base TTL | Score multiplier | Repeat multiplier | Effective TTL |
+|---|---|---|---|---|
+| Score 65, 1st offense | 1h | 1× | 1× | **1 hour** |
+| Score 115, 1st offense | 1h | 2× | 1× | **2 hours** |
+| Score 65, 2nd offense | 1h | 1× | 2× | **2 hours** |
+| Score 115, 3rd offense | 1h | 2× | 4× | **8 hours** |
+
+TTL is capped at 7 days maximum.
+
+### Escalation flow
+
 ```
 First offence:
   IP scores ≥ 60
       │
       ▼
-  csf -td <ip> 3600 BotBlocker   ← temporary block (1 hour)
-  OffenderCount[ip]++               (persisted to state.json)
+  csf -td <ip> <ttl> BotBlocker   ← temporary block (TTL scaled by score)
+  OffenderCount[ip]++                (persisted to state.json)
 
 Second & third offence:
-  Same as above — OffenderCount keeps incrementing
+  Same flow — TTL doubles each time, OffenderCount keeps incrementing
 
 Fourth offence (repeat_offender_n = 3):
   IP scores ≥ 60 again
@@ -349,9 +371,13 @@ Fourth offence (repeat_offender_n = 3):
   Moved to PermanentBlocked map
 ```
 
-State is written to `/var/lib/botblocker/state.json` after every block action and survives daemon restarts.
+### CSF pre-check
 
-> **Note:** The offender count does **not** reset between temporary blocks. A scanner that keeps coming back will escalate to permanent regardless of how long they waited between attacks.
+Before issuing any block, BotBlocker checks if the IP is already in CSF's deny lists (e.g. blocked by LFD, cPanel, or manually). If already blocked, it logs `ACTION=ALREADY_BLOCKED` instead of failing with a duplicate-entry error. The offender count still increments so the IP properly escalates to permanent.
+
+State is written to `/var/lib/botblocker/state.json` after every state change (blocks, unblocks, expirations) and survives daemon restarts.
+
+> **Note:** The offender count only increments on successful blocks or already-blocked confirmations — failed CSF commands do not escalate the count. The count does **not** reset between temporary blocks, so a scanner that keeps coming back will escalate to permanent regardless of how long they waited between attacks.
 
 ---
 
@@ -380,9 +406,10 @@ State is written to `/var/lib/botblocker/state.json` after every block action an
 ### blocked.log format
 
 ```
-[2024-01-25 14:32:10] ACTION=BLOCK TYPE=TEMP IP=203.0.113.42 SCORE=115 TTL=3600s REASON="80 req/min; 100% error rate; scanner UA; honeypot hit"
-[2024-01-25 16:45:02] ACTION=BLOCK TYPE=PERMANENT IP=203.0.113.42 SCORE=95 TTL=permanent REASON="multi-vhost scan; honeypot hit"
-[2024-01-25 16:45:02] ACTION=UNBLOCK IP=198.51.100.1
+[2026-03-05 14:32:10] ACTION=BLOCK TYPE=TEMP IP=203.0.113.42 SCORE=115 TTL=7200s REASON="80 req/min; 100% error rate; scanner UA; honeypot hit"
+[2026-03-05 16:45:02] ACTION=BLOCK TYPE=PERMANENT IP=203.0.113.42 SCORE=95 TTL=permanent REASON="multi-vhost scan; honeypot hit"
+[2026-03-05 16:45:02] ACTION=ALREADY_BLOCKED TYPE=TEMP IP=198.51.100.7 SCORE=65 TTL=3600s REASON="honeypot hit: /xmlrpc.php"
+[2026-03-05 17:45:02] ACTION=UNBLOCK IP=198.51.100.1
 ```
 
 ---
@@ -420,11 +447,17 @@ grep "TYPE=PERMANENT" /var/log/botblocker/blocked.log | awk '{print $4}' | cut -
 # Force an immediate scan without restarting
 kill -USR1 $(pidof botblocker)
 
-# Run a single scan cycle (dry-run friendly — check logs after)
+# Dry-run scan — prints what would be blocked, does not call CSF
 botblocker --once
+
+# Live scan — blocks threats and logs to both stdout and log files
+botblocker --scan
 
 # Run with a different config
 botblocker --config /path/to/other.ini
+
+# Override parse window (e.g. look back 30 minutes)
+botblocker --scan --window 1800
 
 # Check version
 botblocker --version
@@ -464,13 +497,15 @@ kill -USR1 $(pidof botblocker)   # daemon re-reads whitelist on each cycle
 | Task | Command |
 |---|---|
 | Force immediate scan | `kill -USR1 $(pidof botblocker)` |
-| One-shot scan | `botblocker --once` |
+| Dry-run scan | `botblocker --once` |
+| Live scan (blocks + logs) | `botblocker --scan` |
 | Watch blocks live | `tail -f /var/log/botblocker/blocked.log` |
 | Unblock an IP | `csf -dr <ip>` |
 | Check if IP is blocked | `csf -g <ip>` |
 | Restart after config change | `systemctl restart botblocker` |
 | View repeat offenders | `cat /var/lib/botblocker/state.json` |
 | Add IP to whitelist | `echo "<ip>" >> /usr/local/botblocker/whitelist.txt` |
+| Check version | `botblocker --version` |
 
 ---
 
@@ -514,6 +549,37 @@ CloudLinux's LVE limits per-user CPU so a single targeted domain may not spike t
 ### Cloudflare note
 
 If a domain uses Cloudflare, the real visitor IP arrives in the `CF-Connecting-IP` header. BotBlocker handles this automatically — it detects the Cloudflare log format and extracts the real IP rather than blocking Cloudflare's proxy servers. Cloudflare's IPv4 and IPv6 ranges are pre-populated in `whitelist.txt`.
+
+---
+
+## Changelog
+
+### v1.4.0
+
+- **TTL scaling** — temporary block duration now scales by score severity (doubles per 50 points above threshold) and repeat offense count (doubles each time), capped at 7 days
+- **CSF pre-check** — checks CSF deny lists before blocking to avoid duplicate-entry errors; logs `ACTION=ALREADY_BLOCKED` for IPs already denied by LFD, cPanel, or manual rules
+- **Offender count fix** — count only increments on successful blocks, preventing phantom escalation when CSF commands fail
+- **State persistence fix** — state is now saved after cleaning expired blocks, eliminating duplicate `ACTION=UNBLOCK` log entries
+- **`--scan` logging** — scan mode now writes to both stdout and log files (previously stdout only)
+- **CSF error diagnostics** — captures combined stdout/stderr from CSF commands for actionable error messages
+- **Systemd service hardening** — added `/etc/csf` and `/var/lib/csf` to `ReadWritePaths`; disabled `ProtectKernelModules` for ipset/netfilter compatibility
+
+### v1.3.0
+
+- Configurable operational limits (`max_blocks_per_min`, `max_lines_per_file`, `max_file_size`)
+- Unknown config keys now produce errors instead of being silently ignored
+
+### v1.2.2
+
+- Fix update script service file warning
+
+### v1.2.1
+
+- Version display and update script improvements
+
+### v1.2.0
+
+- Initial public release with full scoring, blocking, and escalation pipeline
 
 ---
 
