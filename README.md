@@ -585,4 +585,4 @@ If a domain uses Cloudflare, the real visitor IP arrives in the `CF-Connecting-I
 
 ## License
 
-MIT
+AGPL-3.0 — see [LICENSE](LICENSE). You are free to use, modify, and distribute this software. All modifications must remain open source under the same license.
